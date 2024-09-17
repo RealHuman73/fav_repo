@@ -23,7 +23,6 @@ def create_page():
     else:
         st.write("Add a password (optional)")
 
-
 def define_section_list():
     # Define the section types
     section_types = [
@@ -41,29 +40,31 @@ def define_section_list():
     
     # Optionally, update session state or handle selected_section_list
     st.session_state.section_list['section_types'] = selected_section_list
+    st.write("Selected Section List:", selected_section_list)
 
-    # Update other lists to match the length of selected_section_list
-    while len(st.session_state.section_list['section_titles']) < len(selected_section_list):
-        st.session_state.section_list['section_titles'].append("")
-        st.session_state.section_list['entry_opts'].append(pd.DataFrame())
-        st.session_state.section_list['section_id'].append(np.nan)
+    num_sections = len(selected_section_list)
 
-    # Ensure excess elements are removed
-    st.session_state.section_list['section_titles'] = st.session_state.section_list['section_titles'][:len(selected_section_list)]
-    st.session_state.section_list['entry_opts'] = st.session_state.section_list['entry_opts'][:len(selected_section_list)]
-    st.session_state.section_list['section_id'] = st.session_state.section_list['section_id'][:len(selected_section_list)]
+    # Example of initialization to ensure all lists have `num_sections` rows
+    for key in ['section_titles', 'entry_opts', 'section_id', 'numeric_lists', 'tables', 'file_binaries']:
+        while len(st.session_state.section_list[key]) < num_sections:
+            if key in ['numeric_lists', 'tables', 'file_binaries']:
+                st.session_state.section_list[key].append([])  # Or append a default value
+            else:
+                st.session_state.section_list[key].append('')  # Or append a default value
 
     for i, section in enumerate(selected_section_list):
         if section == 'radio':
             st.write("RADIO")
             create_radio_button(i)
+            st.write("----")
         elif section == 'multiselect':
             st.write('MULTISELECT')
         elif section == 'text_entry':
             st.write('TEXT_ENTRY')
         elif section == 'table_entry':
-            create_table(i)
             st.write('TABLE_ENTRY')
+            create_table(i)
+            st.write("----")
         elif section == 'file_import':
             st.write('FILE_IMPORT')
         elif section == 'chat_thread':
@@ -75,14 +76,13 @@ def define_section_list():
 
 
 def create_radio_button(section_index):
-    add_empty_row_section_list(section_index)
     new_section_title = st.text_input("Section Title", key=f"{section_index}_title")
 
     num_rows = st.number_input("Number of Rows", min_value=1, max_value=100, value=1, key=f"{section_index}_rows")
 
     # Initialize DataFrame with user inputs
     df = pd.DataFrame('', index=range(num_rows), columns=["Enter radio opts"])
-    df = st.data_editor(df, use_container_width=True, key=f"{section_index}_data_editor")
+    df = st.data_editor(df, use_container_width=True, key=f"{section_index}_radio")
 
     # Update the session state
     section_list = st.session_state.section_list
@@ -93,32 +93,31 @@ def create_radio_button(section_index):
     else:
         st.write("Index out of range")
 
+
 def make_radio(section_index, section_title, entry_opts):
-    entry_opts = st.session_state.section_list['entry_opts'][section_index]
     entry_opts = pd.DataFrame(entry_opts)    
     options = entry_opts["Enter radio opts"].dropna().tolist()
     responses = st.radio(section_title, options = options, key = f"{section_index} radio")
     return responses
 
 def create_table(section_index):
-    add_empty_row_section_list(section_index)
     new_section_title = st.text_input("Section Title", key=f"{section_index}_title")
 
     # Initialize DataFrame with user inputs
     uploaded_file = st.file_uploader("Upload Template Table (.csv only)", type="csv", key=f"{section_index}_template")
-    # Update the session state
-    section_list = st.session_state.section_list
-    if section_index < len(section_list['section_titles']) and uploaded_file is not None:
+    
+    if uploaded_file is not None:
+        # Read CSV file into DataFrame
+        uploaded_file_df = pd.read_csv(uploaded_file)
+        st.session_state.section_list['tables'][section_index] = uploaded_file_df
         st.session_state.section_list['section_titles'][section_index] = new_section_title
-        uploaded_file = pd.DataFrame(uploaded_file)
-        st.session_state.section_list['tables'][section_index] = uploaded_file
         st.session_state.section_list['section_id'][section_index] = section_index
     else:
-        st.write("Template table upload required")
+        st.warning("Template table upload required")
 
-def make_table(section_index, section_title, entry_opts):    
-    template = st.session_state.section_list['tables'][section_index]
-    responses = st.data_editor(section_title, template, key = f"{section_index} radio")
+def make_table(section_index, section_title, table):    
+    st.write(section_title)
+    responses = st.data_editor(table, key = f"{section_index}_data_editor")
     return responses
 
 def display_page():
@@ -142,21 +141,31 @@ def display_page():
             'Section Type': section_types,
             'Entry Options': entry_opts,
             'Numeric_lists': numeric_lists,
-            'Tables': tables,
+            'Tables': [pd.DataFrame(table) if not isinstance(table, pd.DataFrame) else table for table in tables],
             'Binaries': file_binaries
         })
 
         assembled_page = st.session_state.assembled_page
 
         st.subheader(f"Page: {page_title}")
+        st.write(section_types)    
+        st.write(section_titles)  
 
         for index, row in assembled_page.iterrows():
             st.write(f"Index: {row['Index']}")
             st.write(f"Section Title: {row['Section Title']}")
             st.write(f"Section Type: {row['Section Type']}")
-            user_choices = make_radio(row['Index'], row['Section Title'], row['Entry Options'])
-            st.write(user_choices)
-            st.write("----")
+            if row['Section Type'] == 'radio':
+                user_choices = make_radio(row['Index'], row['Section Title'], row['Entry Options'])
+                st.write(row['Index'])
+                st.write(row['Section Title'])
+                st.write(row['Entry Options'])
+                st.write("----")
+            elif row['Section Type'] == 'table_entry':
+                user_choices = make_table(row['Index'], row['Section Title'], row['Tables'])        
+                st.write("----")
+            else:
+                pass
     else:
         st.markdown(
             """
@@ -192,25 +201,6 @@ def initialize_section_list():
             'tables': [], 
             'file_binaries': []
         }
-
-def add_empty_row_section_list(row_index):
-    if 'section_list' in st.session_state:
-        section_list = st.session_state.section_list
-        
-        # Ensure all lists are long enough
-        for key in section_list:
-            if len(section_list[key]) <= row_index:
-                section_list[key].extend([None] * (row_index + 1 - len(section_list[key])))
-        
-        # Initialize the row
-        section_list['entry_opts'][row_index] = []
-        section_list['section_titles'][row_index] = ''
-        section_list['section_types'][row_index] = ''
-        section_list['section_id'][row_index] = row_index
-        section_list['numeric_lists'][row_index] = []
-        section_list['tables'][row_index] = pd.DataFrame()
-        section_list['file_binaries'][row_index] = b''
-
 
 # Set the page layout to wide
 st.set_page_config(layout="wide")
