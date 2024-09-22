@@ -346,6 +346,116 @@ if uploaded_file is not None:
 
 
 
+#########################
+
+
+
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
+from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
+import os
+
+# Set the Streamlit app title
+st.title("Excel Data Analysis and Clustering App")
+
+# Step 1: Excel Import
+uploaded_file = st.file_uploader("Upload an Excel file", type=["xlsx"])
+
+if uploaded_file is not None:
+    # Load the Excel file
+    xls = pd.ExcelFile(uploaded_file)
+    sheet_names = xls.sheet_names
+    selected_sheet = st.selectbox("Select a sheet", sheet_names)
+
+    # Read the selected sheet into a DataFrame
+    df = pd.read_excel(xls, sheet_name=selected_sheet)
+
+    # Display the DataFrame
+    st.write("Data Preview:")
+    st.dataframe(df)
+
+    # Step 2: Multi-select for numeric columns
+    numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
+    selected_columns = st.multiselect("Select columns for analysis", numeric_cols, default=numeric_cols)
+
+    # Optional: Single select for line names
+    line_name_col = st.selectbox("Select line names column (optional)", ["None"] + df.columns.tolist())
+
+    # Step 3: Z-score Scaling and Clustering
+    if selected_columns:
+        # Imputation
+        imputer = SimpleImputer(strategy='mean')
+        imputed_data = imputer.fit_transform(df[selected_columns])
+        
+        # Z-score scaling
+        scaler = StandardScaler()
+        scaled_data = scaler.fit_transform(imputed_data)
+
+        # KMeans clustering
+        n_clusters = st.slider("Select number of clusters", min_value=1, max_value=10, value=1)
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+        df['Cluster'] = kmeans.fit_predict(scaled_data)
+
+        # Step 4: Prepare data for parallel coordinates plot
+        plot_data = pd.DataFrame(scaled_data, columns=selected_columns)
+        plot_data['Cluster'] = df['Cluster']
+        
+        # Remove imputed values (rows with NaN) for plotting
+        plot_data = plot_data.dropna()
+
+        # Include line names if selected
+        if line_name_col != "None":
+            plot_data['Line Names'] = df[line_name_col]
+            line_names = plot_data['Line Names']
+        else:
+            line_names = None
+
+        # Step 5: Create Parallel Coordinates Plot
+        st.subheader("Parallel Coordinates Plot")
+        plot_filenames = []  # To store the names of saved files
+        for cluster in range(n_clusters):
+            cluster_data = plot_data[plot_data['Cluster'] == cluster]
+            plt.figure(figsize=(10, 6))
+            if line_names is not None:
+                plt.plot(cluster_data[selected_columns].T, alpha=0.5)
+                plt.xticks(range(len(selected_columns)), selected_columns, rotation=45)
+                plt.title(f"Cluster {cluster + 1} - Line Names: {line_names[cluster_data.index].values}")
+            else:
+                plt.plot(cluster_data[selected_columns].T, alpha=0.5)
+                plt.xticks(range(len(selected_columns)), selected_columns, rotation=45)
+                plt.title(f"Cluster {cluster + 1}")
+
+            plt.xlabel("Features")
+            plt.ylabel("Scaled Values")
+            plt.grid()
+            plt.tight_layout()
+
+            # Save the plot temporarily
+            plot_filename = f"parallel_coordinates_cluster_{cluster + 1}.png"
+            plt.savefig(plot_filename)
+            plt.close()  # Close the plot to avoid display issues
+            plot_filenames.append(plot_filename)
+            st.image(plot_filename, caption=f"Cluster {cluster + 1} Parallel Coordinates Plot", use_column_width=True)
+
+        # Step 7: Export Cluster Assignments
+        if st.button("Export Cluster Assignments"):
+            export_data = df[['Cluster'] + selected_columns].copy()
+            export_data.to_excel("cluster_assignments.xlsx", index=False)
+            st.success("Cluster assignments exported as 'cluster_assignments.xlsx'!")
+
+        # Step 8: Export Parallel Coordinates Plots
+        if st.button("Export Parallel Coordinates Plots"):
+            for plot_filename in plot_filenames:
+                with open(plot_filename, "rb") as f:
+                    st.download_button(label=f"Download {plot_filename}", data=f, file_name=plot_filename)
+
+            st.success("Parallel coordinates plots ready for download!")
+
 
 
 
